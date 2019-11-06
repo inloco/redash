@@ -45,6 +45,8 @@ class Presto(BaseQueryRunner):
                 "schema": {"type": "string"},
                 "catalog": {"type": "string"},
                 "username": {"type": "string"},
+                "pushdown_users": {"type": "boolean",
+                    "title": "Pushdown Redash Users"},
                 "password": {"type": "string"},
             },
             "order": [
@@ -52,6 +54,7 @@ class Presto(BaseQueryRunner):
                 "protocol",
                 "port",
                 "username",
+                "pushdown_users",
                 "password",
                 "schema",
                 "catalog",
@@ -92,16 +95,23 @@ class Presto(BaseQueryRunner):
 
         return list(schema.values())
 
+    def get_presto_username(self, user):
+        pushdown_users = self.configuration.get("pushdown_users")
+
+        if pushdown_users and user and not user.is_api_user():
+            return user.email.split('@', 1)[0]
+
+        return self.configuration.get("username", "redash")
+
     def run_query(self, query, user):
         connection = presto.connect(
             host=self.configuration.get("host", ""),
             port=self.configuration.get("port", 8080),
             protocol=self.configuration.get("protocol", "http"),
-            username=self.configuration.get("username", "redash"),
+            username=self.get_presto_username(user),
             password=(self.configuration.get("password") or None),
             catalog=self.configuration.get("catalog", "hive"),
-            schema=self.configuration.get("schema", "default"),
-        )
+            schema=self.configuration.get("schema", "default"))
 
         cursor = connection.cursor()
 
