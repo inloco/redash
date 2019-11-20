@@ -148,8 +148,7 @@ class Python(BaseQueryRunner):
 
         result["rows"].append(values)
 
-    @staticmethod
-    def execute_query(data_source_name_or_id, query):
+    def execute_query(self, data_source_name_or_id, query):
         """Run query from specific data source.
 
         Parameters:
@@ -164,8 +163,7 @@ class Python(BaseQueryRunner):
         except models.NoResultFound:
             raise Exception("Wrong data source name/id: %s." % data_source_name_or_id)
 
-        # TODO: pass the user here...
-        data, error = data_source.query_runner.run_query(query, None)
+        data, error = data_source.query_runner.run_query(query, self._current_user)
         if error is not None:
             raise Exception(error)
 
