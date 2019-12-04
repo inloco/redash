@@ -6,6 +6,7 @@ import sys
 from redash.query_runner import *
 from redash.utils import json_dumps, json_loads
 from redash import models
+from redash.permissions import has_access, view_only
 from RestrictedPython import compile_restricted
 from RestrictedPython.Guards import safe_builtins
 
@@ -95,6 +96,7 @@ class Python(BaseQueryRunner):
         self._script_locals = {"result": {"rows": [], "columns": [], "log": []}}
         self._enable_print_log = True
         self._custom_print = CustomPrint()
+        self._subqueries = []
 
         if self.configuration.get("allowedImportModules", None):
             for item in self.configuration["allowedImportModules"].split(","):
@@ -189,7 +191,11 @@ class Python(BaseQueryRunner):
             raise Exception(error)
 
         # TODO: allow avoiding the JSON dumps/loads in same process
-        return json_loads(data)
+        result = json_loads(data)
+        self._subqueries.append({"data_source_id": data_source.id, "query_text": query})
+        self._subqueries.extend(result.get("subqueries", []))
+
+        return result
 
     @staticmethod
     def get_source_schema(data_source_name_or_id):
@@ -208,8 +214,7 @@ class Python(BaseQueryRunner):
         schema = data_source.query_runner.get_schema()
         return schema
 
-    @staticmethod
-    def get_query_result(query_id):
+    def get_query_result(self, query_id):
         """Get result of an existing query.
 
         Parameters:
@@ -220,11 +225,21 @@ class Python(BaseQueryRunner):
         except models.NoResultFound:
             raise Exception("Query id %s does not exist." % query_id)
 
-        if query.latest_query_data is None:
+        query_result = query.latest_query_data
+
+        if query_result is None:
             raise Exception("Query does not have results yet.")
 
-        if query.latest_query_data.data is None:
+        if query_result.data is None:
             raise Exception("Query does not have results yet.")
+
+        if not has_access(query_result, self._current_user, view_only):
+            raise Exception("Access denied to query results.")
+
+        result = query_result.data
+        self._subqueries.append({"data_source_id": query_result.data_source_id,
+                                 "query_text": query_result.query_text})
+        self._subqueries.extend(query_result.data.get("subqueries", []))
 
         return query.latest_query_data.data
 
@@ -284,6 +299,7 @@ class Python(BaseQueryRunner):
 
             result = self._script_locals["result"]
             result["log"] = self._custom_print.lines
+            result["subqueries"] = self._subqueries
             json_data = json_dumps(result)
         except KeyboardInterrupt:
             error = "Query cancelled by user."
