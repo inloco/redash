@@ -46,31 +46,51 @@ def get_query_results(user, query_id, bring_from_cache):
     query = _load_query(user, query_id)
     if bring_from_cache:
         if query.latest_query_data_id is not None:
-            results = query.latest_query_data.data
+            query_result = query.latest_query_data
+            if not has_access(query_result, user, view_only):
+                raise PermissionError(u"You do not have access to query_result id {}.".format(
+                    query_result.id))
+            results = query_result.data
+            subquery = { "data_source_id": query_result.data_source_id,
+                         "query_text": query_result.query_text }
         else:
             raise Exception("No cached result available for query {}.".format(query.id))
     else:
         results, error = query.data_source.query_runner.run_query(
             query.query_text, user
         )
+        subquery = { "data_source_id": query.data_source_id,
+                     "query_text": query.query_text }
+
         if error:
             raise Exception("Failed loading results for query id {}.".format(query.id))
         else:
             results = json_loads(results)
 
-    return results
+    return results, subquery
 
 
-def create_tables_from_query_ids(user, connection, query_ids, cached_query_ids=[]):
+def create_tables_from_query_ids(user,
+                                 connection,
+                                 query_ids,
+                                 cached_query_ids=[]):
+    subqueries = []
+
     for query_id in set(cached_query_ids):
-        results = get_query_results(user, query_id, True)
+        results, subquery = get_query_results(user, query_id, True)
+        subqueries.append(subquery)
+        subqueries.extend(results.get("subqueries", []))
         table_name = "cached_query_{query_id}".format(query_id=query_id)
         create_table(connection, table_name, results)
 
     for query_id in set(query_ids):
-        results = get_query_results(user, query_id, False)
+        results, subquery = get_query_results(user, query_id, False)
+        subqueries.append(subquery)
+        subqueries.extend(results.get("subqueries", []))
         table_name = "query_{query_id}".format(query_id=query_id)
         create_table(connection, table_name, results)
+
+    return subqueries
 
 
 def fix_column_name(name):
@@ -128,7 +148,8 @@ class Results(BaseQueryRunner):
 
         query_ids = extract_query_ids(query)
         cached_query_ids = extract_cached_query_ids(query)
-        create_tables_from_query_ids(user, connection, query_ids, cached_query_ids)
+        subqueries = create_tables_from_query_ids(user, connection, query_ids,
+                                                  cached_query_ids)
 
         cursor = connection.cursor()
 
@@ -152,7 +173,7 @@ class Results(BaseQueryRunner):
 
                     rows.append(dict(zip(column_names, row)))
 
-                data = {"columns": columns, "rows": rows}
+                data = {"columns": columns, "rows": rows, "subqueries": subqueries}
                 error = None
                 json_data = json_dumps(data)
             else:
