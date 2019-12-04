@@ -95,6 +95,9 @@ class BaseQueryRunner(object):
         if error is not None:
             raise Exception(error)
 
+    def has_access_to_cached_results(self, query, user):
+        return True
+
     def run_query(self, query, user):
         raise NotImplementedError()
 

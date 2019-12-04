@@ -16,9 +16,14 @@ ACCESS_TYPES = (ACCESS_TYPE_VIEW, ACCESS_TYPE_MODIFY, ACCESS_TYPE_DELETE)
 
 def has_access(obj, user, need_view_only):
     if hasattr(obj, 'api_key') and user.is_api_user():
-        return has_access_to_object(obj, user.id, need_view_only)
+        allowed = has_access_to_object(obj, user.id, need_view_only)
     else:
-        return has_access_to_groups(obj, user, need_view_only)
+        allowed = has_access_to_groups(obj, user, need_view_only)
+
+    if allowed and hasattr(obj, 'has_access'):
+        allowed = obj.has_access(user, need_view_only)
+
+    return allowed
 
 
 def has_access_to_object(obj, api_key, need_view_only):
@@ -52,7 +57,6 @@ def has_access_to_groups(obj, user, need_view_only):
 def require_access(obj, user, need_view_only):
     if not has_access(obj, user, need_view_only):
         abort(403)
-
 
 class require_permissions(object):
     def __init__(self, permissions):

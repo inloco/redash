@@ -325,6 +325,18 @@ class QueryResult(db.Model, BelongsToOrgMixin):
     def groups(self):
         return self.data_source.groups
 
+    def has_access(self, user, need_view_only):
+        subqueries = json_loads(self.data).get('subqueries', [])
+
+        for subquery in subqueries:
+            query_runner = DataSource.get_by_id(subquery['data_source_id']).query_runner
+            allowed = query_runner.has_access_to_cached_results(subquery['query_text'], user)
+            if not allowed:
+                return False
+
+        query_runner = self.data_source.query_runner
+        return query_runner.has_access_to_cached_results(self.query_text, user)
+
 
 def should_schedule_next(previous_iteration, now, interval, time=None, day_of_week=None, failures=0):
     # if time exists then interval > 23 hours (82800s)
