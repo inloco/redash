@@ -48,6 +48,8 @@ class Presto(BaseQueryRunner):
                 "pushdown_users": {"type": "boolean",
                     "title": "Pushdown Redash Users"},
                 "password": {"type": "string"},
+                "cached_results_access_control": {"type": "boolean",
+                    "title": "Verify users access permission to cached results"},
             },
             "order": [
                 "host",
@@ -58,6 +60,7 @@ class Presto(BaseQueryRunner):
                 "password",
                 "schema",
                 "catalog",
+                "cached_results_access_control",
             ],
             "required": ["host"],
         }
@@ -94,6 +97,17 @@ class Presto(BaseQueryRunner):
             schema[table_name]["columns"].append(row["column_name"])
 
         return list(schema.values())
+
+    def has_access_to_cached_results(self, query, user):
+        access_control_enabled = self.configuration.get("cached_results_access_control")
+
+        if not access_control_enabled:
+            return True
+
+        validate_query = "EXPLAIN (TYPE VALIDATE) " + query
+        results, error = self.run_query(validate_query, user)
+
+        return error is None
 
     def get_presto_username(self, user):
         pushdown_users = self.configuration.get("pushdown_users")
