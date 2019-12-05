@@ -30,6 +30,7 @@ from redash.models.parameterized_query import (
     ParameterizedQuery,
     InvalidParameterError,
     QueryDetachedFromDataSourceError,
+    QueryAccessDeniedError,
     dropdown_values,
 )
 from redash.serializers import (
@@ -74,9 +75,11 @@ def run_query(query, parameters, data_source, query_id, max_age=0):
         return error_response(message)
 
     try:
-        query.apply(parameters)
+        query.apply(parameters, current_user)
     except (InvalidParameterError, QueryDetachedFromDataSourceError) as e:
         abort(400, message=str(e))
+    except (QueryAccessDeniedError) as e:
+        abort(403, message=str(e))
 
     if query.missing_params:
         return error_response(
@@ -209,9 +212,11 @@ class QueryResultDropdownResource(BaseResource):
         )
         require_access(query.data_source, current_user, view_only)
         try:
-            return dropdown_values(query_id, self.current_org)
+            return dropdown_values(query_id, self.current_org, current_user)
         except QueryDetachedFromDataSourceError as e:
             abort(400, message=str(e))
+        except QueryAccessDeniedError as e:
+            abort(403, message=str(e))
 
 
 class QueryDropdownsResource(BaseResource):
@@ -230,7 +235,12 @@ class QueryDropdownsResource(BaseResource):
             )
             require_access(dropdown_query.data_source, current_user, view_only)
 
-        return dropdown_values(dropdown_query_id, self.current_org)
+        try:
+            return dropdown_values(dropdown_query_id, self.current_org, current_user)
+        except QueryDetachedFromDataSourceError as e:
+            abort(400, message=str(e))
+        except QueryAccessDeniedError as e:
+            abort(403, message=str(e))
 
 
 class QueryResultResource(BaseResource):

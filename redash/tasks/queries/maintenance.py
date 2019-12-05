@@ -6,6 +6,7 @@ from redash import models, redis_connection, settings, statsd_client
 from redash.models.parameterized_query import (
     InvalidParameterError,
     QueryDetachedFromDataSourceError,
+    QueryAccessDeniedError,
 )
 from redash.tasks.failure_report import track_failure
 from redash.utils import json_dumps
@@ -58,7 +59,7 @@ def refresh_queries():
                 parameters = {p["name"]: p.get("value") for p in query.parameters}
                 if any(parameters):
                     try:
-                        query_text = query.parameterized.apply(parameters).query
+                        query_text = query.parameterized.apply(parameters, query.user).query
                     except InvalidParameterError as e:
                         error = u"Skipping refresh of {} because of invalid parameters: {}".format(
                             query.id, str(e)
@@ -71,6 +72,12 @@ def refresh_queries():
                             "query ({}) is unattached to any datasource."
                         ).format(query.id, e.query_id)
                         track_failure(query, error)
+                        continue
+                    except QueryAccessDeniedError as e:
+                        error = (
+                            "Skipping refresh of {} because user {} doesn't have "
+                            "access to a related dropdown query ({})."
+                        ).format(query.id, query.user, e.query_id)
                         continue
 
                 enqueue_query(
