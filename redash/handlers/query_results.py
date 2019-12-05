@@ -12,7 +12,8 @@ from redash.tasks import QueryTask
 from redash.tasks.queries import enqueue_query
 from redash.utils import (collect_parameters_from_request, gen_query_hash, json_dumps, utcnow, to_filename)
 from redash.models.parameterized_query import (ParameterizedQuery, InvalidParameterError,
-                                               QueryDetachedFromDataSourceError, dropdown_values)
+                                               QueryDetachedFromDataSourceError, QueryAccessDeniedError,
+                                               dropdown_values)
 from redash.serializers import serialize_query_result, serialize_query_result_to_csv, serialize_query_result_to_xlsx
 
 
@@ -38,9 +39,11 @@ def run_query(query, parameters, data_source, query_id, max_age=0):
         return error_response(message)
 
     try:
-        query.apply(parameters)
+        query.apply(parameters, current_user)
     except (InvalidParameterError, QueryDetachedFromDataSourceError) as e:
         abort(400, message=e.message)
+    except (QueryAccessDeniedError) as e:
+        abort(403, message=e.message)
 
     if query.missing_params:
         return error_response(u'Missing parameter value for: {}'.format(u", ".join(query.missing_params)))
@@ -128,9 +131,11 @@ class QueryResultDropdownResource(BaseResource):
         query = get_object_or_404(models.Query.get_by_id_and_org, query_id, self.current_org)
         require_access(query.data_source, current_user, view_only)
         try:
-            return dropdown_values(query_id, self.current_org)
+            return dropdown_values(query_id, self.current_org, current_user)
         except QueryDetachedFromDataSourceError as e:
             abort(400, message=e.message)
+        except QueryAccessDeniedError as e:
+            abort(403, message=e.message)
 
 
 class QueryDropdownsResource(BaseResource):
@@ -143,7 +148,12 @@ class QueryDropdownsResource(BaseResource):
             dropdown_query = get_object_or_404(models.Query.get_by_id_and_org, dropdown_query_id, self.current_org)
             require_access(dropdown_query.data_source, current_user, view_only)
 
-        return dropdown_values(dropdown_query_id, self.current_org)
+        try:
+            return dropdown_values(dropdown_query_id, self.current_org, current_user)
+        except QueryDetachedFromDataSourceError as e:
+            abort(400, message=e.message)
+        except QueryAccessDeniedError as e:
+            abort(403, message=e.message)
 
 
 class QueryResultResource(BaseResource):

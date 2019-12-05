@@ -2,7 +2,7 @@ import pystache
 from functools import partial
 from numbers import Number
 from redash.utils import mustache_render, json_loads
-from redash.permissions import require_access, view_only
+from redash.permissions import has_access, view_only
 from funcy import distinct
 from dateutil.parser import parse
 
@@ -17,20 +17,22 @@ def _pluck_name_and_value(default_column, row):
     return {"name": row[name_column], "value": text_type(row[value_column])}
 
 
-def _load_result(query_id, org):
+def _load_result(query_id, org, user):
     from redash import models
 
     query = models.Query.get_by_id_and_org(query_id, org)
 
     if query.data_source:
         query_result = models.QueryResult.get_by_id_and_org(query.latest_query_data_id, org)
+        if not has_access(query_result, user, view_only):
+            raise QueryAccessDeniedError(query_id)
         return json_loads(query_result.data)
     else:
         raise QueryDetachedFromDataSourceError(query_id)
 
 
-def dropdown_values(query_id, org):
-    data = _load_result(query_id, org)
+def dropdown_values(query_id, org, user):
+    data = _load_result(query_id, org, user)
     first_column = data["columns"][0]["name"]
     pluck = partial(_pluck_name_and_value, first_column)
     return map(pluck, data["rows"])
@@ -121,8 +123,8 @@ class ParameterizedQuery(object):
         self.query = template
         self.parameters = {}
 
-    def apply(self, parameters):
-        invalid_parameter_names = [key for (key, value) in parameters.iteritems() if not self._valid(key, value)]
+    def apply(self, parameters, user):
+        invalid_parameter_names = [key for (key, value) in parameters.iteritems() if not self._valid(key, value, user)]
         if invalid_parameter_names:
             raise InvalidParameterError(invalid_parameter_names)
         else:
@@ -131,7 +133,7 @@ class ParameterizedQuery(object):
 
         return self
 
-    def _valid(self, name, value):
+    def _valid(self, name, value, user):
         if not self.schema:
             return True
 
@@ -154,7 +156,7 @@ class ParameterizedQuery(object):
                                                            enum_options,
                                                            allow_multiple_values),
             "query": lambda value: _is_value_within_options(value,
-                                                            [v["value"] for v in dropdown_values(query_id, self.org)],
+                                                            [v["value"] for v in dropdown_values(query_id, self.org, user)],
                                                             allow_multiple_values),
             "date": _is_date,
             "datetime-local": _is_date,
@@ -195,3 +197,10 @@ class QueryDetachedFromDataSourceError(Exception):
         self.query_id = query_id
         super(QueryDetachedFromDataSourceError, self).__init__(
             "This query is detached from any data source. Please select a different query.")
+
+
+class QueryAccessDeniedError(Exception):
+    def __init__(self, query_id):
+        self.query_id = query_id
+        super(QueryAccessDeniedError, self).__init__(
+            "Access denied to parameters dropdown values query.")
