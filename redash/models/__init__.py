@@ -26,6 +26,7 @@ from redash.query_runner import (get_configuration_schema_for_query_runner_type,
 from redash.utils import generate_token, json_dumps, json_loads, mustache_render
 from redash.utils.configuration import ConfigurationContainer
 from redash.models.parameterized_query import ParameterizedQuery
+from redash.permissions import has_access, view_only
 
 from .base import db, gfk_type, Column, GFKBase, SearchBaseQuery
 from .changes import ChangeTrackingMixin, Change  # noqa
@@ -800,6 +801,10 @@ class Alert(TimestampMixin, BelongsToOrgMixin, db.Model):
         return super(Alert, cls).get_by_id_and_org(object_id, org, Query)
 
     def evaluate(self):
+        if not has_access(self.query_rel.latest_query_data, self.user, view_only):
+            logger.warning("User {} doesn't have permission to evaluate alert {}.".format(self.user, self.id))
+            return self.UNKNOWN_STATE
+
         data = json_loads(self.query_rel.latest_query_data.data)
 
         if data['rows'] and self.options['column'] in data['rows'][0]:
@@ -836,6 +841,11 @@ class Alert(TimestampMixin, BelongsToOrgMixin, db.Model):
     def render_template(self):
         if not self.template:
             return ''
+
+        if not has_access(self.query_rel.latest_query_data, self.user, view_only):
+            logger.warning("User {} doesn't have permission to render alert {}.".format(self.user, self.id))
+            return ''
+
         data = json_loads(self.query_rel.latest_query_data.data)
         context = {'rows': data['rows'], 'cols': data['columns'], 'state': self.state}
         return mustache_render(self.template, context)
