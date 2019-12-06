@@ -40,6 +40,7 @@ from redash.utils import (
 )
 from redash.utils.configuration import ConfigurationContainer
 from redash.models.parameterized_query import ParameterizedQuery
+from redash.permissions import has_access, view_only
 
 from .base import db, gfk_type, Column, GFKBase, SearchBaseQuery
 from .changes import ChangeTrackingMixin, Change  # noqa
@@ -963,6 +964,10 @@ class Alert(TimestampMixin, BelongsToOrgMixin, db.Model):
         return super(Alert, cls).get_by_id_and_org(object_id, org, Query)
 
     def evaluate(self):
+        if not has_access(self.query_rel.latest_query_data, self.user, view_only):
+            logger.warning("User {} doesn't have permission to evaluate alert {}.".format(self.user, self.id))
+            return self.UNKNOWN_STATE
+
         data = self.query_rel.latest_query_data.data
 
         if data["rows"] and self.options["column"] in data["rows"][0]:
@@ -985,6 +990,10 @@ class Alert(TimestampMixin, BelongsToOrgMixin, db.Model):
     def render_template(self, template):
         if template is None:
             return ""
+
+        if not has_access(self.query_rel.latest_query_data, self.user, view_only):
+            logger.warning("User {} doesn't have permission to render alert {}.".format(self.user, self.id))
+            return ''
 
         data = self.query_rel.latest_query_data.data
         host = base_url(self.query_rel.org)
