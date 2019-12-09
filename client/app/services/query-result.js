@@ -48,9 +48,7 @@ function QueryResultService($resource, $timeout, $q, QueryResultError, Auth) {
   };
 
   function handleErrorResponse(queryResult, response) {
-    if (response.status === 403) {
-      queryResult.update(response.data);
-    } else if (response.status === 400 && 'job' in response.data) {
+    if (response.status === 400 && 'job' in response.data) {
       queryResult.update(response.data);
     } else {
       logger('Unknown error', response);
