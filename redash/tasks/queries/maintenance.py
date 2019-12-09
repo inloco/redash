@@ -59,7 +59,7 @@ def refresh_queries():
                 parameters = {p["name"]: p.get("value") for p in query.parameters}
                 if any(parameters):
                     try:
-                        query_text = query.parameterized.apply(parameters, query.user).query
+                        query_text = query.parameterized.apply(parameters, query.last_modified_by).query
                     except InvalidParameterError as e:
                         error = u"Skipping refresh of {} because of invalid parameters: {}".format(
                             query.id, str(e)
@@ -77,13 +77,13 @@ def refresh_queries():
                         error = (
                             "Skipping refresh of {} because user {} doesn't have "
                             "access to a related dropdown query ({})."
-                        ).format(query.id, query.user, e.query_id)
+                        ).format(query.id, query.last_modified_by, e.query_id)
                         continue
 
                 enqueue_query(
                     query_text,
                     query.data_source,
-                    query.user_id,
+                    query.last_modified_by_id,
                     scheduled_query=query,
                     metadata={"Query ID": query.id, "Username": "Scheduled"},
                 )
