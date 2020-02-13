@@ -68,10 +68,12 @@ class Presto(BaseQueryRunner):
                     'type': 'boolean',
                     'title': 'Verify users access permission to cached results'
                 },
-
+                'source': {
+                    'type': 'string'
+                }
             },
             'order': ['host', 'protocol', 'port', 'username',
-                'pushdown_users', 'password', 'schema', 'catalog'],
+                'pushdown_users', 'password', 'schema', 'catalog', 'source'],
             'required': ['host']
         }
 
@@ -142,6 +144,7 @@ class Presto(BaseQueryRunner):
             username=self._get_presto_username(user, datasource_username),
             catalog=self.configuration.get('catalog', 'hive'),
             schema=self.configuration.get('schema', 'default'),
+            source=self.configuration.get('source', 'redash'),
             requests_kwargs=requests_kwargs)
 
         cursor = connection.cursor()
