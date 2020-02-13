@@ -1,4 +1,5 @@
 from collections import defaultdict
+from requests.auth import HTTPBasicAuth
 from redash.query_runner import *
 from redash.utils import json_dumps, json_loads
 
@@ -118,23 +119,30 @@ class Presto(BaseQueryRunner):
 
         return error is None
 
-    def get_presto_username(self, user):
+    def _get_presto_username(self, user, fallback_user):
         pushdown_users = self.configuration.get('pushdown_users')
 
         if pushdown_users and user and not user.is_api_user():
             return user.email.split('@', 1)[0]
 
-        return self.configuration.get('username', 'redash')
+        return fallback_user
 
     def run_query(self, query, user):
+        requests_kwargs = {}
+        datasource_username = self.configuration.get('username', 'redash')
+        password = self.configuration.get('password')
+
+        if password is not None:
+            requests_kwargs['auth'] = HTTPBasicAuth(datasource_username, password)
+
         connection = presto.connect(
             host=self.configuration.get('host', ''),
             port=self.configuration.get('port', 8080),
             protocol=self.configuration.get('protocol', 'http'),
-            username=self.get_presto_username(user),
-            password=(self.configuration.get('password') or None),
+            username=self._get_presto_username(user, datasource_username),
             catalog=self.configuration.get('catalog', 'hive'),
-            schema=self.configuration.get('schema', 'default'))
+            schema=self.configuration.get('schema', 'default'),
+            requests_kwargs=requests_kwargs)
 
         cursor = connection.cursor()
 
